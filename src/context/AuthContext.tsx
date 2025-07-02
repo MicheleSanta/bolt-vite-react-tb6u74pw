@@ -31,30 +31,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { error, setError, handleError, clearError } = useErrorHandler();
-  const [authInitialized, setAuthInitialized] = useState(false);
   const [connectionLost, setConnectionLost] = useState(false);
+  const [lastFetchTime, setLastFetchTime] = useState(0);
 
-  const checkSessionValidity = async () => {
-    try {
-      const validSession = await checkSession();
-      if (!validSession) {
-        console.warn('Session not found or invalid. Logging out.');
-        await supabase.auth.signOut();
-        setUser(null);
-        setSession(null);
-        setUserRole(null);
-        return false;
-      }
-      return true;
-    } catch (err) {
-      console.error('Error checking session validity:', err);
-      return false;
-    }
-  };
-
-  // Function to fetch user role
+  // Function to fetch user role with debouncing to avoid excessive requests
   const fetchUserRole = useCallback(async (userId: string) => {
     try {
+      const now = Date.now();
+      // Only fetch if we haven't fetched in the last 5 seconds
+      if (now - lastFetchTime < 5000) {
+        return userRole;
+      }
+      
+      setLastFetchTime(now);
+      
       const { data: customUser, error: roleError } = await supabase
         .from('users_custom')
         .select('role, validato, attivo')
@@ -75,38 +65,63 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (err) {
       throw err;
     }
-  }, []);
+  }, [lastFetchTime, userRole]);
 
-  // Connection listener
+  // Handle connection status changes
   useEffect(() => {
     const handleConnectionChange = (connected: boolean) => {
       setConnectionLost(!connected);
-      if (!connected) {
-        setError("La connessione al database è stata persa. Tentativo di riconnessione in corso...");
-      } else if (connected && connectionLost) {
-        clearError();
-        // If reconnection was successful, verify our session
-        checkSessionValidity().then(valid => {
-          if (valid && user) {
-            // If we have a valid session, refresh the user role
-            fetchUserRole(user.id)
-              .then(role => setUserRole(role))
-              .catch(console.error);
-          }
+      
+      if (connected && session && user) {
+        // If reconnection successful, verify session is still valid
+        checkSession().catch(() => {
+          console.warn('Session invalid after reconnection');
+          signOut();
         });
       }
     };
 
     addConnectionListener(handleConnectionChange);
     return () => removeConnectionListener(handleConnectionChange);
-  }, [connectionLost, user]);
+  }, [session, user]);
+
+  // Check session validity periodically
+  useEffect(() => {
+    let sessionCheckTimer: number | undefined;
+    
+    const checkSessionPeriodically = () => {
+      sessionCheckTimer = window.setTimeout(async () => {
+        if (!connectionLost && session) {
+          try {
+            const validSession = await checkSession();
+            if (!validSession) {
+              console.warn('Session check failed, signing out');
+              await signOut();
+            }
+          } catch (err) {
+            console.error('Error checking session:', err);
+          }
+        }
+        checkSessionPeriodically();
+      }, 60000); // Check every minute
+    };
+    
+    checkSessionPeriodically();
+    
+    return () => {
+      if (sessionCheckTimer) {
+        clearTimeout(sessionCheckTimer);
+      }
+    };
+  }, [connectionLost, session]);
 
   // Initialize auth state
   useEffect(() => {
-    // Get initial session
     const initAuth = async () => {
       try {
+        setIsLoading(true);
         const { data: { session }, error } = await supabase.auth.getSession();
+        
         if (error) {
           handleError(error);
         } else {
@@ -124,57 +139,42 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             }
           }
         }
-        setIsLoading(false);
-        setAuthInitialized(true);
       } catch (err) {
         console.error('Error initializing auth:', err);
+      } finally {
         setIsLoading(false);
-        setAuthInitialized(true);
       }
     };
 
     initAuth();
 
-    // Set up session check interval (every 30 seconds)
-    const sessionCheckInterval = setInterval(() => {
-      if (!connectionLost) {
-        checkSessionValidity().catch(console.error);
-      }
-    }, 30 * 1000);
-
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      setUser(session?.user || null);
-      
-      if (session?.user) {
-        try {
-          const role = await fetchUserRole(session.user.id);
-          setUserRole(role);
-        } catch (err) {
-          handleError(err);
-          setUserRole(null);
-          await signOut();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        setSession(session);
+        setUser(session?.user || null);
+        
+        if (session?.user) {
+          try {
+            const role = await fetchUserRole(session.user.id);
+            setUserRole(role);
+          } catch (err) {
+            handleError(err);
+            setUserRole(null);
+            await signOut();
+          }
         }
-      } else {
+      } else if (event === 'SIGNED_OUT') {
+        setSession(null);
+        setUser(null);
         setUserRole(null);
       }
     });
 
-    // Setup connection monitoring with auto-retry (every minute)
-    const connectionMonitor = setInterval(() => {
-      if (connectionLost) {
-        console.log("Attempting to restore database connection...");
-        refreshConnection().catch(console.error);
-      }
-    }, 60 * 1000);
-
     return () => {
       subscription.unsubscribe();
-      clearInterval(sessionCheckInterval);
-      clearInterval(connectionMonitor);
     };
-  }, [authInitialized, connectionLost]);
+  }, []);
 
   const signOut = async () => {
     try {
@@ -194,7 +194,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         session, 
         user, 
         userRole,
-        isLoading: isLoading || !authInitialized,
+        isLoading,
         error,
         signOut,
         clearError,
