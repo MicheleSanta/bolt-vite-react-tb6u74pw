@@ -49,32 +49,65 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 
 // Add heartbeat ping to keep connection alive
 let heartbeatInterval: number | null = null;
+let retryCount = 0;
+const MAX_RETRIES = 5;
+const INITIAL_RETRY_DELAY = 2000; // 2 seconds
 
 export const startHeartbeat = () => {
   // Clear any existing heartbeat
   if (heartbeatInterval) {
     clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
   }
   
-  // Set up heartbeat every 30 seconds
+  // Set up heartbeat every 15 seconds
   heartbeatInterval = window.setInterval(async () => {
     try {
       // Simple ping to keep the connection alive
       const { error } = await supabase.from('versione').select('id').limit(1);
       if (error) {
         console.warn('Supabase heartbeat error:', error);
+        retryHeartbeat();
+      } else {
+        // Reset retry count on successful ping
+        retryCount = 0;
       }
     } catch (err) {
       console.error('Error in Supabase heartbeat:', err);
+      retryHeartbeat();
     }
-  }, 30000);
+  }, 15000); // Reduced from 30s to 15s for more frequent pings
   
   // Clean up on window unload
-  window.addEventListener('beforeunload', () => {
-    if (heartbeatInterval) {
-      clearInterval(heartbeatInterval);
-    }
-  });
+  window.addEventListener('beforeunload', stopHeartbeat);
+};
+
+export const stopHeartbeat = () => {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+  window.removeEventListener('beforeunload', stopHeartbeat);
+};
+
+const retryHeartbeat = () => {
+  if (retryCount < MAX_RETRIES) {
+    retryCount++;
+    console.log(`Retry attempt ${retryCount}/${MAX_RETRIES} for Supabase connection...`);
+    
+    // Exponential backoff for retries
+    const delay = INITIAL_RETRY_DELAY * Math.pow(2, retryCount - 1);
+    
+    setTimeout(() => {
+      // Re-initialize the connection
+      stopHeartbeat();
+      startHeartbeat();
+    }, delay);
+  } else {
+    console.error('Max retry attempts reached. Please check your network connection.');
+    // Reset retry count to allow future reconnection attempts
+    retryCount = 0;
+  }
 };
 
 // Function to ensure admin users exist and are properly configured
@@ -210,6 +243,32 @@ export const checkSession = async (): Promise<Session | null> => {
     }
   }
   return null;
+};
+
+// Function to refresh the Supabase connection
+export const refreshConnection = async (): Promise<boolean> => {
+  try {
+    // Perform a lightweight query to test connection
+    const { error } = await supabase.from('versione').select('id').limit(1);
+    
+    if (error) {
+      console.warn('Connection test failed, attempting to refresh...');
+      
+      // Attempt to refresh the session
+      const { error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        console.error('Failed to refresh session:', refreshError);
+        return false;
+      }
+      
+      return true;
+    }
+    
+    return true;
+  } catch (err) {
+    console.error('Error refreshing connection:', err);
+    return false;
+  }
 };
 
 // Function to get current user with role
