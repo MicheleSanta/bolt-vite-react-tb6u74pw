@@ -12,16 +12,70 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Supabase URL and Anon Key must be provided');
 }
 
+// Create Supabase client with enhanced connection settings
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
     storage: window.localStorage,
-    retryAttempts,
-    retryInterval
+    retryAttempts: retryAttempts,
+    retryInterval: retryInterval
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10
+    }
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'service-paghe-app@1.0.1'
+    },
+    fetch: (url, options) => {
+      // Enhanced fetch with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+      
+      const fetchPromise = fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      
+      fetchPromise.finally(() => clearTimeout(timeoutId));
+      return fetchPromise;
+    }
   }
 });
+
+// Add heartbeat ping to keep connection alive
+let heartbeatInterval: number | null = null;
+
+export const startHeartbeat = () => {
+  // Clear any existing heartbeat
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+  }
+  
+  // Set up heartbeat every 30 seconds
+  heartbeatInterval = window.setInterval(async () => {
+    try {
+      // Simple ping to keep the connection alive
+      const { error } = await supabase.from('versione').select('id').limit(1);
+      if (error) {
+        console.warn('Supabase heartbeat error:', error);
+      }
+    } catch (err) {
+      console.error('Error in Supabase heartbeat:', err);
+    }
+  }, 30000);
+  
+  // Clean up on window unload
+  window.addEventListener('beforeunload', () => {
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+    }
+  });
+};
 
 // Function to ensure admin users exist and are properly configured
 export const createAdminUser = async () => {

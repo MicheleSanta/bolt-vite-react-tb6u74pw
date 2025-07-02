@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
-import { createAdminUser } from './lib/supabase.ts'
+import { createAdminUser, startHeartbeat } from './lib/supabase.ts'
 import { AuthProvider } from './context/AuthContext.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 
@@ -11,6 +11,9 @@ async function initializeApp() {
   try {
     // Try to create the admin user on application startup
     await createAdminUser();
+    
+    // Start the heartbeat to keep the connection alive
+    startHeartbeat();
     
     // Initialize the root with proper error boundaries
     createRoot(document.getElementById('root')!).render(

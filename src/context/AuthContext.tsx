@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { supabase, checkSession } from '../lib/supabase';
 import { useErrorHandler } from '../hooks/useErrorHandler';
 
 interface AuthContextType {
@@ -29,6 +29,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { error, setError, handleError, clearError } = useErrorHandler();
+  const [authInitialized, setAuthInitialized] = useState(false);
 
   const checkSessionValidity = async () => {
     try {
@@ -37,49 +38,66 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         console.warn('Session not found or invalid. Logging out.');
         await supabase.auth.signOut();
         setUser(null);
+        setSession(null);
+        setUserRole(null);
       }
+      return !!session;
     } catch (err) {
       console.error('Error checking session validity:', err);
+      return false;
     }
   };
 
   useEffect(() => {
     // Get initial session
-    supabase.auth.getSession().then(async ({ data: { session }, error }) => {
-      if (error) {
-        handleError(error);
-      } else {
-        setSession(session);
-        setUser(session?.user || null);
-        
-        if (session?.user) {
-          try {
-            const { data: customUser, error: roleError } = await supabase
-              .from('users_custom')
-              .select('role, validato, attivo')
-              .eq('id', session.user.id)
-              .single();
-            
-            if (roleError) throw roleError;
-            
-            if (!customUser.attivo) {
-              throw new Error('Account disattivato');
+    const initAuth = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          handleError(error);
+        } else {
+          setSession(session);
+          setUser(session?.user || null);
+          
+          if (session?.user) {
+            try {
+              const { data: customUser, error: roleError } = await supabase
+                .from('users_custom')
+                .select('role, validato, attivo')
+                .eq('id', session.user.id)
+                .single();
+              
+              if (roleError) throw roleError;
+              
+              if (!customUser.attivo) {
+                throw new Error('Account disattivato');
+              }
+              
+              if (!customUser.validato) {
+                throw new Error('Account in attesa di validazione');
+              }
+              
+              setUserRole(customUser?.role || 'user');
+            } catch (err) {
+              handleError(err);
+              setUserRole(null);
+              await signOut();
             }
-            
-            if (!customUser.validato) {
-              throw new Error('Account in attesa di validazione');
-            }
-            
-            setUserRole(customUser?.role || 'user');
-          } catch (err) {
-            handleError(err);
-            setUserRole(null);
-            await signOut();
           }
         }
+        setIsLoading(false);
+        setAuthInitialized(true);
+      } catch (err) {
+        console.error('Error initializing auth:', err);
+        setIsLoading(false);
+        setAuthInitialized(true);
       }
-      setIsLoading(false);
-    });
+    };
+
+    initAuth();
+
+    // Set up session check interval (every 5 minutes)
+    const sessionCheckInterval = setInterval(checkSessionValidity, 5 * 60 * 1000);
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -115,10 +133,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     });
 
-    checkSessionValidity();
-
     return () => {
       subscription.unsubscribe();
+      clearInterval(sessionCheckInterval);
     };
   }, []);
 
@@ -140,7 +157,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         session, 
         user, 
         userRole,
-        isLoading,
+        isLoading: isLoading || !authInitialized,
         error,
         signOut,
         clearError
