@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { Session, User } from '@supabase/supabase-js';
-import { supabase, checkSession, refreshConnection } from '../lib/supabase';
+import { supabase, checkSession, refreshConnection, addConnectionListener, removeConnectionListener } from '../lib/supabase';
 import { useErrorHandler } from '../hooks/useErrorHandler';
 
 interface AuthContextType {
@@ -11,6 +11,7 @@ interface AuthContextType {
   error: string | null;
   signOut: () => Promise<void>;
   clearError: () => void;
+  connectionLost: boolean;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -21,6 +22,7 @@ const AuthContext = createContext<AuthContextType>({
   error: null,
   signOut: async () => {},
   clearError: () => {},
+  connectionLost: false
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -30,7 +32,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
   const { error, setError, handleError, clearError } = useErrorHandler();
   const [authInitialized, setAuthInitialized] = useState(false);
-  const [connectionActive, setConnectionActive] = useState(true);
+  const [connectionLost, setConnectionLost] = useState(false);
 
   const checkSessionValidity = async () => {
     try {
@@ -75,6 +77,30 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, []);
 
+  // Connection listener
+  useEffect(() => {
+    const handleConnectionChange = (connected: boolean) => {
+      setConnectionLost(!connected);
+      if (!connected) {
+        setError("La connessione al database è stata persa. Tentativo di riconnessione in corso...");
+      } else if (connected && connectionLost) {
+        clearError();
+        // If reconnection was successful, verify our session
+        checkSessionValidity().then(valid => {
+          if (valid && user) {
+            // If we have a valid session, refresh the user role
+            fetchUserRole(user.id)
+              .then(role => setUserRole(role))
+              .catch(console.error);
+          }
+        });
+      }
+    };
+
+    addConnectionListener(handleConnectionChange);
+    return () => removeConnectionListener(handleConnectionChange);
+  }, [connectionLost, user]);
+
   // Initialize auth state
   useEffect(() => {
     // Get initial session
@@ -109,25 +135,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     initAuth();
 
-    // Set up session check interval (every 2 minutes)
+    // Set up session check interval (every 30 seconds)
     const sessionCheckInterval = setInterval(() => {
-      checkSessionValidity().then(valid => {
-        if (!valid && authInitialized) {
-          // If session is invalid and we've already initialized, try to reconnect
-          refreshConnection().then(success => {
-            setConnectionActive(success);
-            if (!success) {
-              // If reconnection failed, clear the user state
-              setSession(null);
-              setUser(null);
-              setUserRole(null);
-            }
-          });
-        } else {
-          setConnectionActive(true);
-        }
-      });
-    }, 2 * 60 * 1000);
+      if (!connectionLost) {
+        checkSessionValidity().catch(console.error);
+      }
+    }, 30 * 1000);
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -138,7 +151,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         try {
           const role = await fetchUserRole(session.user.id);
           setUserRole(role);
-          setConnectionActive(true);
         } catch (err) {
           handleError(err);
           setUserRole(null);
@@ -149,28 +161,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     });
 
-    // Setup connection monitoring
+    // Setup connection monitoring with auto-retry (every minute)
     const connectionMonitor = setInterval(() => {
-      if (connectionActive === false) {
+      if (connectionLost) {
         console.log("Attempting to restore database connection...");
-        refreshConnection().then(success => {
-          setConnectionActive(success);
-          if (success && user) {
-            // If connection is restored and we have a user, refresh the role
-            fetchUserRole(user.id)
-              .then(role => setUserRole(role))
-              .catch(console.error);
-          }
-        });
+        refreshConnection().catch(console.error);
       }
-    }, 5000); // Check every 5 seconds if connection is lost
+    }, 60 * 1000);
 
     return () => {
       subscription.unsubscribe();
       clearInterval(sessionCheckInterval);
       clearInterval(connectionMonitor);
     };
-  }, [authInitialized, connectionActive, user]);
+  }, [authInitialized, connectionLost]);
 
   const signOut = async () => {
     try {
@@ -184,15 +188,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  // Display a visible error if connection is lost
-  useEffect(() => {
-    if (!connectionActive && !isLoading) {
-      setError("La connessione al database è stata persa. Tentativo di riconnessione in corso...");
-    } else if (connectionActive) {
-      clearError();
-    }
-  }, [connectionActive, isLoading]);
-
   return (
     <AuthContext.Provider 
       value={{ 
@@ -202,7 +197,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         isLoading: isLoading || !authInitialized,
         error,
         signOut,
-        clearError
+        clearError,
+        connectionLost
       }}
     >
       {children}

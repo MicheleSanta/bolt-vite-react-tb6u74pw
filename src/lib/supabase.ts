@@ -5,8 +5,9 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
 const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD;
 const adminName = import.meta.env.VITE_ADMIN_NAME;
-const retryAttempts = parseInt(import.meta.env.VITE_RETRY_ATTEMPTS || '3', 10);
+const retryAttempts = parseInt(import.meta.env.VITE_RETRY_ATTEMPTS || '5', 10);
 const retryInterval = parseInt(import.meta.env.VITE_RETRY_INTERVAL || '2000', 10);
+const connectionTimeout = parseInt(import.meta.env.VITE_CONNECTION_TIMEOUT || '30000', 10);
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Supabase URL and Anon Key must be provided');
@@ -34,7 +35,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     fetch: (url, options) => {
       // Enhanced fetch with timeout
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+      const timeoutId = setTimeout(() => controller.abort(), connectionTimeout);
       
       const fetchPromise = fetch(url, {
         ...options,
@@ -47,18 +48,35 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 });
 
+// Add connection monitoring
+let isConnected = true;
+let connectionListeners: Array<(connected: boolean) => void> = [];
+
+export const addConnectionListener = (listener: (connected: boolean) => void) => {
+  connectionListeners.push(listener);
+  listener(isConnected); // Immediately notify with current state
+};
+
+export const removeConnectionListener = (listener: (connected: boolean) => void) => {
+  connectionListeners = connectionListeners.filter(l => l !== listener);
+};
+
+const notifyConnectionChange = (connected: boolean) => {
+  if (isConnected !== connected) {
+    isConnected = connected;
+    connectionListeners.forEach(listener => listener(connected));
+  }
+};
+
 // Add heartbeat ping to keep connection alive
 let heartbeatInterval: number | null = null;
 let retryCount = 0;
-const MAX_RETRIES = 5;
-const INITIAL_RETRY_DELAY = 2000; // 2 seconds
+const MAX_RETRIES = retryAttempts;
+const INITIAL_RETRY_DELAY = retryInterval;
 
 export const startHeartbeat = () => {
   // Clear any existing heartbeat
-  if (heartbeatInterval) {
-    clearInterval(heartbeatInterval);
-    heartbeatInterval = null;
-  }
+  stopHeartbeat();
   
   // Set up heartbeat every 15 seconds
   heartbeatInterval = window.setInterval(async () => {
@@ -67,16 +85,19 @@ export const startHeartbeat = () => {
       const { error } = await supabase.from('versione').select('id').limit(1);
       if (error) {
         console.warn('Supabase heartbeat error:', error);
+        notifyConnectionChange(false);
         retryHeartbeat();
       } else {
         // Reset retry count on successful ping
         retryCount = 0;
+        notifyConnectionChange(true);
       }
     } catch (err) {
       console.error('Error in Supabase heartbeat:', err);
+      notifyConnectionChange(false);
       retryHeartbeat();
     }
-  }, 15000); // Reduced from 30s to 15s for more frequent pings
+  }, 15000); // 15s interval
   
   // Clean up on window unload
   window.addEventListener('beforeunload', stopHeartbeat);
@@ -96,16 +117,24 @@ const retryHeartbeat = () => {
     console.log(`Retry attempt ${retryCount}/${MAX_RETRIES} for Supabase connection...`);
     
     // Exponential backoff for retries
-    const delay = INITIAL_RETRY_DELAY * Math.pow(2, retryCount - 1);
+    const delay = INITIAL_RETRY_DELAY * Math.pow(1.5, retryCount - 1);
     
     setTimeout(() => {
-      // Re-initialize the connection
-      stopHeartbeat();
-      startHeartbeat();
+      // Attempt to refresh the connection
+      refreshConnection().then(success => {
+        if (success) {
+          console.log('Connection successfully refreshed');
+          retryCount = 0;
+          notifyConnectionChange(true);
+        } else {
+          console.warn('Connection refresh failed');
+          notifyConnectionChange(false);
+        }
+      });
     }, delay);
   } else {
     console.error('Max retry attempts reached. Please check your network connection.');
-    // Reset retry count to allow future reconnection attempts
+    // Reset retry count to allow future reconnection attempts when heartbeat runs again
     retryCount = 0;
   }
 };
@@ -218,24 +247,43 @@ export const createAdminUser = async () => {
   }
 };
 
-// Function to check session with retry logic
+// Function to check session with retry logic and better error handling
 export const checkSession = async (): Promise<Session | null> => {
   let retries = retryAttempts;
   while (retries > 0) {
     try {
       const { data: { session }, error } = await supabase.auth.getSession();
       if (error) {
-        if (error.message.includes('refresh_token_not_found') && retries > 1) {
-          retries--;
-          await new Promise(resolve => setTimeout(resolve, retryInterval));
-          continue;
+        console.warn(`Session check error (${retries} retries left):`, error.message);
+        
+        if (error.message.includes('Failed to fetch') || 
+            error.message.includes('NetworkError') || 
+            error.message.includes('Network request failed')) {
+          console.warn('Network error detected, waiting before retry');
+          notifyConnectionChange(false);
+        } else if (error.message.includes('refresh_token_not_found') && retries > 1) {
+          console.warn('Refresh token not found, trying refresh auth...');
+          await supabase.auth.refreshSession();
         }
-        throw error;
+        
+        retries--;
+        if (retries === 0) {
+          console.error('All session check retries failed');
+          return null;
+        }
+        
+        // Wait before retry with exponential backoff
+        const delay = retryInterval * Math.pow(1.5, retryAttempts - retries);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
       }
+      
+      notifyConnectionChange(true);
       return session;
     } catch (error) {
-      console.error('Error checking session:', error);
+      console.error('Unexpected error checking session:', error);
       retries--;
+      notifyConnectionChange(false);
       if (retries === 0) {
         return null;
       }
@@ -252,16 +300,27 @@ export const refreshConnection = async (): Promise<boolean> => {
     const { error } = await supabase.from('versione').select('id').limit(1);
     
     if (error) {
-      console.warn('Connection test failed, attempting to refresh...');
+      console.warn('Connection test failed, attempting to refresh session...');
       
       // Attempt to refresh the session
       const { error: refreshError } = await supabase.auth.refreshSession();
+      
       if (refreshError) {
+        if (refreshError.message.includes('JWT') || 
+            refreshError.message.includes('token') || 
+            refreshError.message.includes('auth')) {
+          // Auth-related errors, try to get a new session
+          const currentSession = await checkSession();
+          return !!currentSession;
+        }
+        
         console.error('Failed to refresh session:', refreshError);
         return false;
       }
       
-      return true;
+      // Verify the connection is working after refresh
+      const { error: verifyError } = await supabase.from('versione').select('id').limit(1);
+      return !verifyError;
     }
     
     return true;

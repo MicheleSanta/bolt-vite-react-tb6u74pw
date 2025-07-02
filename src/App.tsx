@@ -19,6 +19,7 @@ import ChatAI from './components/ChatAI';
 import TipologiaEnteManager from './components/TipologiaEnteManager';
 import { FileSpreadsheet, FileText, Calendar, FileBarChart2, FileOutput, Users, Settings, Tag, Utensils, MessageCircle, Building2 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
+import ConnectionAlert from './components/ConnectionAlert';
 
 function App() {
   const { session, userRole, isLoading, error, signOut } = useAuth();
@@ -177,6 +178,8 @@ function App() {
             </div>
           </div>
         </footer>
+
+        <ConnectionAlert />
       </div>
     );
   }
@@ -392,6 +395,8 @@ function App() {
           </div>
         </div>
       </footer>
+
+      <ConnectionAlert />
     </div>
   );
 }
