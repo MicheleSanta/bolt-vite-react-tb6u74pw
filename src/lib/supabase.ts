@@ -68,7 +68,8 @@ export const startHeartbeat = () => {
       // Simple lightweight query to test connection
       const { error } = await supabase
         .from('versione')
-        .select('count(*)', { count: 'exact', head: true });
+        .select('id', { head: true })
+        .limit(1);
       
       if (error) {
         console.warn('Supabase connection check failed:', error.message);
@@ -153,7 +154,8 @@ export const refreshConnection = async (): Promise<boolean> => {
     // Test connection with simple query
     const { data, error } = await supabase
       .from('versione')
-      .select('count(*)', { count: 'exact', head: true });
+      .select('id', { head: true })
+      .limit(1);
     
     if (error) {
       console.warn('Connection refresh failed:', error.message);
