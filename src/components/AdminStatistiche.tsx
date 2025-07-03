@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { FileBarChart2, Calendar, Users, FileText, Calculator, Car, Trophy, Search } from 'lucide-react';
-import SearchBar from './SearchBar';
+import { Calendar, Users, FileText, Calculator, Car, Trophy } from 'lucide-react';
 
 interface TecnicoStats {
   id: number;
@@ -36,15 +35,19 @@ interface TecnicoPerformance {
   clienti: number;
 }
 
+const monthOrder = [
+  'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
+  'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'
+];
+
 const AdminStatistiche: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [, setError] = useState<string | null>(null);
   const [tecnici, setTecnici] = useState<{ id: number; nome: string }[]>([]);
   const [selectedTecnicoId, setSelectedTecnicoId] = useState<number | null>(null);
   const [tecnicoStats, setTecnicoStats] = useState<TecnicoStats | null>(null);
   const [periodoFiltro, setPeriodoFiltro] = useState<'mese' | 'anno' | 'tutto'>('mese');
   const [annoFiltro, setAnnoFiltro] = useState<number>(new Date().getFullYear());
-  const [searchQuery, setSearchQuery] = useState('');
   const [classifica, setClassifica] = useState<TecnicoPerformance[]>([]);
 
   useEffect(() => {
