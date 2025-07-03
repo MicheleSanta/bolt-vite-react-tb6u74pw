@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { FileBarChart2, Calendar, Users, FileText, Calculator, Car, Trophy, Search } from 'lucide-react';
+import { Calendar, Users, FileText, Calculator, Car, Trophy, Search } from 'lucide-react';
 import SearchBar from './SearchBar';
 
 interface TecnicoStats {
@@ -35,6 +35,11 @@ interface TecnicoPerformance {
   importo: number;
   clienti: number;
 }
+
+const monthOrder = [
+  'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
+  'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'
+];
 
 const AdminStatistiche: React.FC = () => {
   const [loading, setLoading] = useState(true);

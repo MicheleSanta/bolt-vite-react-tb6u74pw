@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Auth from './components/Auth';
 import ClienteForm from './components/ClienteForm';
 import ClienteList from './components/ClienteList';
@@ -17,7 +17,7 @@ import BuoniPastoManager from './components/BuoniPastoManager';
 import BuoniPastoViewer from './components/BuoniPastoViewer';
 import ChatAI from './components/ChatAI';
 import TipologiaEnteManager from './components/TipologiaEnteManager';
-import { FileSpreadsheet, FileText, Calendar, FileBarChart2, FileOutput, Users, Settings, Tag, Utensils, MessageCircle, Building2 } from 'lucide-react';
+import { FileSpreadsheet, FileText, Calendar, FileBarChart2, FileOutput, Users, Tag, Utensils, MessageCircle, Building2 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import ConnectionAlert from './components/ConnectionAlert';
 

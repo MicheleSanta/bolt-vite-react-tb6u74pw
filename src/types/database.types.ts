@@ -10,6 +10,91 @@ export interface TipologiaEnteInsert {
   forma_giuridica: string;
 }
 
+export interface Cliente {
+  id: number;
+  created_at: string;
+  denominazione: string;
+  referente?: string;
+  cellulare?: string;
+  email?: string;
+  ufficio?: string;
+  indirizzo?: string;
+  citta?: string;
+  cap?: string;
+  provincia?: string;
+  codice_fiscale?: string;
+  partita_iva?: string;
+  pec?: string;
+  codice_univoco?: string;
+  sito_web?: string;
+  note?: string;
+}
+
+export interface ClienteInsert {
+  denominazione: string;
+  referente?: string;
+  cellulare?: string;
+  email?: string;
+  ufficio?: string;
+  indirizzo?: string;
+  citta?: string;
+  cap?: string;
+  provincia?: string;
+  codice_fiscale?: string;
+  partita_iva?: string;
+  pec?: string;
+  codice_univoco?: string;
+  sito_web?: string;
+  note?: string;
+}
+
+export interface Affidamento {
+  id: number;
+  created_at: string;
+  anno: number;
+  determina: string;
+  numero_determina?: string;
+  cig?: string;
+  data: string;
+  data_termine?: string;
+  cliente_id: number;
+  descrizione: string;
+  stato: 'In corso' | 'Completato' | 'Annullato';
+  quantita?: number;
+  prezzo_unitario?: number;
+  imponibile?: number;
+  iva?: number;
+  totale?: number;
+  has_provvigione?: boolean;
+  tipo_provvigione?: 'attiva' | 'passiva';
+  partner_provvigione?: string;
+  percentuale_provvigione?: number;
+  importo_provvigione?: number;
+  cliente?: Cliente;
+}
+
+export interface AffidamentoInsert {
+  anno: number;
+  determina: string;
+  numero_determina?: string;
+  cig?: string;
+  data: string;
+  data_termine?: string;
+  cliente_id: number;
+  descrizione: string;
+  stato: 'In corso' | 'Completato' | 'Annullato';
+  quantita?: number;
+  prezzo_unitario?: number;
+  imponibile?: number;
+  iva?: number;
+  totale?: number;
+  has_provvigione?: boolean;
+  tipo_provvigione?: 'attiva' | 'passiva';
+  partner_provvigione?: string;
+  percentuale_provvigione?: number;
+  importo_provvigione?: number;
+}
+
 export interface TipoServizio {
   id: number;
   codice_servizio: string;
