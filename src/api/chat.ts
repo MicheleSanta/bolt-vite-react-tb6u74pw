@@ -1,10 +1,8 @@
-import { Configuration, OpenAIApi } from 'openai';
+import OpenAI from 'openai';
 
-const configuration = new Configuration({
+const openai = new OpenAI({
   apiKey: import.meta.env.VITE_OPENAI_API_KEY
 });
-
-const openai = new OpenAIApi(configuration);
 
 // System message to provide context and constraints
 const systemMessage = {
@@ -35,7 +33,7 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Metodo non consentito' });
   }
 
-  if (!configuration.apiKey) {
+  if (!openai.apiKey) {
     return res.status(500).json({ error: 'OpenAI API key non configurata' });
   }
 
@@ -45,7 +43,7 @@ export default async function handler(req: any, res: any) {
     // Add system message at the start of the conversation
     const fullMessages = [systemMessage, ...messages];
 
-    const response = await openai.createChatCompletion({
+    const response = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: fullMessages,
       temperature: 0.7,
@@ -55,7 +53,7 @@ export default async function handler(req: any, res: any) {
       presence_penalty: 0
     });
 
-    const reply = response.data.choices[0].message?.content;
+    const reply = response.choices[0].message?.content;
     
     if (!reply) {
       throw new Error('Nessuna risposta ricevuta dall\'AI');
