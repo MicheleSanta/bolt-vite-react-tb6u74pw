@@ -9,35 +9,85 @@ const retryAttempts = parseInt(import.meta.env.VITE_RETRY_ATTEMPTS || '5', 10);
 const retryInterval = parseInt(import.meta.env.VITE_RETRY_INTERVAL || '2000', 10);
 const connectionTimeout = parseInt(import.meta.env.VITE_CONNECTION_TIMEOUT || '30000', 10);
 
-// Shorter heartbeat interval to detect connection issues faster (10 seconds)
-const heartbeatInterval = 10000;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Supabase URL and Anon Key must be provided in environment variables');
-}
-
-// Create Supabase client with enhanced connection settings
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    storage: window.localStorage,
-    // Add retry configuration for token refresh
-    retryAttempts: retryAttempts,
-    retryInterval: retryInterval
-  },
-  global: {
-    headers: {
-      'X-Client-Info': 'service-paghe-app@1.0.1'
-    }
-  },
-  realtime: {
-    params: {
-      eventsPerSecond: 10
-    }
+// Validate environment variables
+const isValidUrl = (string: string): boolean => {
+  try {
+    new URL(string);
+    return true;
+  } catch (_) {
+    return false;
   }
-});
+};
+
+// Check if environment variables are properly configured
+if (!supabaseUrl || !supabaseAnonKey || 
+    supabaseUrl.includes('your_supabase_project_url_here') || 
+    supabaseAnonKey.includes('your_supabase_anon_key_here') ||
+    !isValidUrl(supabaseUrl)) {
+  
+  console.error('❌ Supabase configuration error:');
+  console.error('Please update your .env file with valid Supabase credentials:');
+  console.error('VITE_SUPABASE_URL=https://your-project-ref.supabase.co');
+  console.error('VITE_SUPABASE_ANON_KEY=your-actual-anon-key');
+  console.error('You can find these values in your Supabase project settings under "API Settings"');
+  
+  // Create a mock client that will prevent further errors
+  const mockClient = {
+    auth: {
+      getSession: () => Promise.resolve({ data: { session: null }, error: new Error('Supabase not configured') }),
+      getUser: () => Promise.resolve({ data: { user: null }, error: new Error('Supabase not configured') }),
+      signUp: () => Promise.resolve({ data: { user: null }, error: new Error('Supabase not configured') }),
+      signInWithPassword: () => Promise.resolve({ data: { user: null }, error: new Error('Supabase not configured') }),
+      signOut: () => Promise.resolve({ error: new Error('Supabase not configured') }),
+      refreshSession: () => Promise.resolve({ data: { session: null }, error: new Error('Supabase not configured') }),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } })
+    },
+    from: () => ({
+      select: () => ({ 
+        eq: () => ({ 
+          single: () => Promise.resolve({ data: null, error: new Error('Supabase not configured') }),
+          maybeSingle: () => Promise.resolve({ data: null, error: new Error('Supabase not configured') }),
+          limit: () => Promise.resolve({ data: null, error: new Error('Supabase not configured') })
+        }),
+        limit: () => Promise.resolve({ data: null, error: new Error('Supabase not configured') }),
+        abortSignal: () => Promise.resolve({ data: null, error: new Error('Supabase not configured') })
+      }),
+      insert: () => Promise.resolve({ data: null, error: new Error('Supabase not configured') }),
+      update: () => ({ 
+        eq: () => Promise.resolve({ data: null, error: new Error('Supabase not configured') })
+      }),
+      upsert: () => Promise.resolve({ data: null, error: new Error('Supabase not configured') })
+    })
+  } as any;
+  
+  export { mockClient as supabase };
+} else {
+  // Shorter heartbeat interval to detect connection issues faster (10 seconds)
+  const heartbeatInterval = 10000;
+  
+  // Create Supabase client with enhanced connection settings
+  export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storage: window.localStorage,
+      // Add retry configuration for token refresh
+      retryAttempts: retryAttempts,
+      retryInterval: retryInterval
+    },
+    global: {
+      headers: {
+        'X-Client-Info': 'service-paghe-app@1.0.1'
+      }
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 10
+      }
+    }
+  });
+}
 
 // Connection state management
 let isConnected = true;
