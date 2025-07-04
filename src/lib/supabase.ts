@@ -8,7 +8,9 @@ const adminName = import.meta.env.VITE_ADMIN_NAME;
 const retryAttempts = parseInt(import.meta.env.VITE_RETRY_ATTEMPTS || '5', 10);
 const retryInterval = parseInt(import.meta.env.VITE_RETRY_INTERVAL || '2000', 10);
 const connectionTimeout = parseInt(import.meta.env.VITE_CONNECTION_TIMEOUT || '30000', 10);
-const heartbeatInterval = parseInt(import.meta.env.VITE_HEARTBEAT_INTERVAL || '15000', 10);
+
+// Shorter heartbeat interval to detect connection issues faster (10 seconds)
+const heartbeatInterval = 10000;
 
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Supabase URL and Anon Key must be provided in environment variables');
@@ -20,16 +22,19 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storage: window.localStorage
-  },
-  realtime: {
-    params: {
-      eventsPerSecond: 10
-    }
+    storage: window.localStorage,
+    // Add retry configuration for token refresh
+    retryAttempts: retryAttempts,
+    retryInterval: retryInterval
   },
   global: {
     headers: {
       'X-Client-Info': 'service-paghe-app@1.0.1'
+    }
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10
     }
   }
 });
@@ -37,6 +42,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // Connection state management
 let isConnected = true;
 let connectionListeners: Array<(connected: boolean) => void> = [];
+let lastSuccessfulConnection = Date.now();
 
 export const addConnectionListener = (listener: (connected: boolean) => void) => {
   connectionListeners.push(listener);
@@ -49,89 +55,175 @@ export const removeConnectionListener = (listener: (connected: boolean) => void)
 
 const notifyConnectionChange = (connected: boolean) => {
   if (isConnected !== connected) {
+    console.log(`Connection state changed: ${connected ? 'CONNECTED' : 'DISCONNECTED'}`);
     isConnected = connected;
+    
+    if (connected) {
+      lastSuccessfulConnection = Date.now();
+      retryCount = 0; // Reset retry counter on success
+    }
+    
     connectionListeners.forEach(listener => listener(connected));
   }
 };
 
 // Connection heartbeat and retry logic
-let heartbeatTimer: number | null = null;
+let heartbeatTimer: number | undefined = undefined;
 let retryCount = 0;
-let retryTimer: number | null = null;
+let retryTimer: number | undefined = undefined;
+let lastHeartbeatTime = 0;
 
 export const startHeartbeat = () => {
   stopHeartbeat(); // Clear any existing timers
+  lastHeartbeatTime = Date.now();
   
   // Set up heartbeat
   heartbeatTimer = window.setInterval(async () => {
     try {
-      // Simple lightweight query to test connection
+      // Track heartbeat attempt time
+      lastHeartbeatTime = Date.now();
+      
+      // Use a simple query with timeout to test connection
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5-second timeout
+      
       const { error } = await supabase
         .from('versione')
-        .select('id', { head: true })
-        .limit(1);
+        .select('id', { head: true, count: 'exact' })
+        .limit(1)
+        .abortSignal(controller.signal);
+      
+      clearTimeout(timeoutId);
       
       if (error) {
-        console.warn('Supabase connection check failed:', error.message);
+        console.warn(`Heartbeat failed: ${error.message}`);
         notifyConnectionChange(false);
         scheduleRetry();
       } else {
+        // Connection is working
         notifyConnectionChange(true);
-        retryCount = 0; // Reset retry counter on success
       }
-    } catch (err) {
-      console.error('Error in Supabase heartbeat:', err);
+    } catch (err: any) {
+      // Handle timeout or other errors
+      if (err.name === 'AbortError') {
+        console.warn('Heartbeat timed out after 5 seconds');
+      } else {
+        console.error('Heartbeat error:', err);
+      }
+      
       notifyConnectionChange(false);
       scheduleRetry();
     }
   }, heartbeatInterval);
   
+  // Add a backup timer to check if heartbeats are actually running
+  // This catches cases where setInterval might be throttled in background tabs
+  window.setInterval(() => {
+    const timeSinceLastHeartbeat = Date.now() - lastHeartbeatTime;
+    if (timeSinceLastHeartbeat > heartbeatInterval * 2) {
+      console.warn(`Heartbeat appears stalled (${Math.round(timeSinceLastHeartbeat/1000)}s since last check)`);
+      
+      // Force a new heartbeat
+      if (heartbeatTimer) {
+        window.clearInterval(heartbeatTimer);
+      }
+      startHeartbeat();
+    }
+  }, heartbeatInterval * 2);
+  
   // Clean up on window unload
   window.addEventListener('beforeunload', stopHeartbeat);
+  
+  // Setup visibility change handler to immediately check connection when tab becomes visible
+  document.addEventListener('visibilitychange', handleVisibilityChange);
   
   console.log(`Supabase connection heartbeat started (${heartbeatInterval}ms interval)`);
 };
 
 export const stopHeartbeat = () => {
-  if (heartbeatTimer !== null) {
+  if (heartbeatTimer !== undefined) {
     window.clearInterval(heartbeatTimer);
-    heartbeatTimer = null;
+    heartbeatTimer = undefined;
   }
   
-  if (retryTimer !== null) {
+  if (retryTimer !== undefined) {
     window.clearTimeout(retryTimer);
-    retryTimer = null;
+    retryTimer = undefined;
   }
   
   window.removeEventListener('beforeunload', stopHeartbeat);
+  document.removeEventListener('visibilitychange', handleVisibilityChange);
+};
+
+const handleVisibilityChange = () => {
+  if (document.visibilityState === 'visible') {
+    console.log('Tab became visible, checking connection immediately');
+    // Force an immediate connection check when the tab becomes visible
+    checkConnection();
+  }
+};
+
+const checkConnection = async () => {
+  try {
+    const { error } = await supabase
+      .from('versione')
+      .select('id', { head: true })
+      .limit(1);
+    
+    if (error) {
+      notifyConnectionChange(false);
+      scheduleRetry();
+    } else {
+      notifyConnectionChange(true);
+    }
+  } catch (err) {
+    console.error('Connection check failed:', err);
+    notifyConnectionChange(false);
+    scheduleRetry();
+  }
 };
 
 const scheduleRetry = () => {
-  if (retryTimer !== null) {
+  if (retryTimer !== undefined) {
     window.clearTimeout(retryTimer);
   }
   
+  // Maximum of retryAttempts retries with exponential backoff
   if (retryCount < retryAttempts) {
     retryCount++;
     
-    // Exponential backoff with jitter
+    // Calculate delay with exponential backoff and jitter
     const baseDelay = retryInterval * Math.pow(1.5, retryCount - 1);
     const jitter = Math.random() * 0.3 * baseDelay;
-    const delay = Math.min(baseDelay + jitter, 30000); // Cap at 30 seconds
+    const delay = Math.min(Math.round(baseDelay + jitter), 30000); // Cap at 30 seconds
     
-    console.log(`Scheduling connection retry ${retryCount}/${retryAttempts} in ${Math.round(delay)}ms`);
+    console.log(`Scheduling connection retry ${retryCount}/${retryAttempts} in ${delay}ms`);
     
     retryTimer = window.setTimeout(async () => {
-      await refreshConnection();
-      retryTimer = null;
+      try {
+        await refreshConnection();
+      } catch (err) {
+        console.error('Connection retry failed:', err);
+      }
+      retryTimer = undefined;
     }, delay);
   } else {
-    console.error('Maximum retry attempts reached. Connection recovery failed.');
-    // Reset retry count after a longer delay to allow future retry attempts
-    retryTimer = window.setTimeout(() => {
-      retryCount = 0;
-      retryTimer = null;
-    }, 60000); // Wait 1 minute before resetting retry counter
+    console.error(`Maximum retry attempts (${retryAttempts}) reached.`);
+    
+    // Schedule a final retry after a longer delay
+    const finalRetryDelay = 60000; // 1 minute
+    console.log(`Scheduling final recovery attempt in ${finalRetryDelay/1000}s`);
+    
+    retryTimer = window.setTimeout(async () => {
+      try {
+        // Attempt a full reconnection
+        retryCount = 0;
+        await forceReconnect();
+      } catch (err) {
+        console.error('Final reconnection attempt failed:', err);
+      }
+      retryTimer = undefined;
+    }, finalRetryDelay);
   }
 };
 
@@ -154,7 +246,7 @@ export const refreshConnection = async (): Promise<boolean> => {
     // Test connection with simple query
     const { data, error } = await supabase
       .from('versione')
-      .select('id', { head: true })
+      .select('id', { head: true, count: 'exact' })
       .limit(1);
     
     if (error) {
@@ -168,6 +260,45 @@ export const refreshConnection = async (): Promise<boolean> => {
     return true;
   } catch (err) {
     console.error('Error during connection refresh:', err);
+    notifyConnectionChange(false);
+    return false;
+  }
+};
+
+// Force a complete reconnection by reloading key components
+const forceReconnect = async (): Promise<boolean> => {
+  try {
+    console.log('Forcing full reconnection...');
+    
+    // Clear any auth state issues that might be present
+    const currentSession = await supabase.auth.getSession();
+    
+    if (currentSession.data.session) {
+      // If we have a session, try to refresh it
+      await supabase.auth.refreshSession();
+    } else {
+      // If no session, we might need to re-authenticate
+      // This is handled by the auth system
+      console.log('No active session found during reconnection');
+    }
+    
+    // Test the connection
+    const { error } = await supabase
+      .from('versione')
+      .select('id', { head: true })
+      .limit(1);
+    
+    if (error) {
+      console.warn('Force reconnection failed:', error.message);
+      notifyConnectionChange(false);
+      return false;
+    }
+    
+    console.log('Force reconnection succeeded');
+    notifyConnectionChange(true);
+    return true;
+  } catch (err) {
+    console.error('Error during force reconnection:', err);
     notifyConnectionChange(false);
     return false;
   }

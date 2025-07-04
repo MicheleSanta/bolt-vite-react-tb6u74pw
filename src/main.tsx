@@ -6,6 +6,15 @@ import { createAdminUser, startHeartbeat } from './lib/supabase.ts'
 import { AuthProvider } from './context/AuthContext.tsx'
 import ErrorBoundary from './components/ErrorBoundary.tsx'
 
+// Add an event handler for online/offline events
+window.addEventListener('online', () => {
+  console.log('Browser reports online status');
+});
+
+window.addEventListener('offline', () => {
+  console.log('Browser reports offline status');
+});
+
 // Initialize auth state before rendering
 async function initializeApp() {
   try {

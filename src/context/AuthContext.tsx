@@ -33,6 +33,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const { error, setError, handleError, clearError } = useErrorHandler();
   const [connectionLost, setConnectionLost] = useState(false);
   const [lastFetchTime, setLastFetchTime] = useState(0);
+  const [sessionCheckTimer, setSessionCheckTimer] = useState<number | undefined>(undefined);
 
   // Function to fetch user role with debouncing to avoid excessive requests
   const fetchUserRole = useCallback(async (userId: string) => {
@@ -70,12 +71,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // Handle connection status changes
   useEffect(() => {
     const handleConnectionChange = (connected: boolean) => {
+      console.log(`Connection status changed: ${connected ? 'Connected' : 'Disconnected'}`);
       setConnectionLost(!connected);
       
       if (connected && session && user) {
         // If reconnection successful, verify session is still valid
         checkSession().catch(() => {
-          console.warn('Session invalid after reconnection');
+          console.warn('Session invalid after reconnection, signing out');
           signOut();
         });
       }
@@ -87,33 +89,47 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Check session validity periodically
   useEffect(() => {
-    let sessionCheckTimer: number | undefined;
-    
     const checkSessionPeriodically = () => {
-      sessionCheckTimer = window.setTimeout(async () => {
+      // Clear any existing timer
+      if (sessionCheckTimer) {
+        window.clearTimeout(sessionCheckTimer);
+      }
+      
+      // Set up a new timer
+      const timerId = window.setTimeout(async () => {
         if (!connectionLost && session) {
           try {
             const validSession = await checkSession();
             if (!validSession) {
               console.warn('Session check failed, signing out');
               await signOut();
+            } else {
+              // Update last activity timestamp on successful check
+              await supabase.rpc('update_user_last_access').catch(err => {
+                console.warn('Failed to update last access time:', err);
+              });
             }
           } catch (err) {
             console.error('Error checking session:', err);
           }
         }
+        // Schedule the next check
         checkSessionPeriodically();
       }, 60000); // Check every minute
+      
+      setSessionCheckTimer(timerId);
     };
     
+    // Start the periodic checks
     checkSessionPeriodically();
     
+    // Cleanup
     return () => {
       if (sessionCheckTimer) {
-        clearTimeout(sessionCheckTimer);
+        window.clearTimeout(sessionCheckTimer);
       }
     };
-  }, [connectionLost, session]);
+  }, [connectionLost, session, sessionCheckTimer]);
 
   // Initialize auth state
   useEffect(() => {
@@ -132,6 +148,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             try {
               const role = await fetchUserRole(session.user.id);
               setUserRole(role);
+              
+              // Update last access time
+              await supabase.rpc('update_user_last_access').catch(err => {
+                console.warn('Failed to update initial last access time:', err);
+              });
             } catch (err) {
               handleError(err);
               setUserRole(null);
@@ -150,6 +171,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log(`Auth state changed: ${event}`);
+      
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         setSession(session);
         setUser(session?.user || null);
@@ -174,7 +197,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [fetchUserRole, handleError]);
 
   const signOut = async () => {
     try {
