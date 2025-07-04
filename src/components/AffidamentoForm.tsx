@@ -101,7 +101,7 @@ const AffidamentoForm: React.FC<AffidamentoFormProps> = ({
   // Calculate provvigione amount when percentage or totale changes
   useEffect(() => {
     if (affidamento.has_provvigione && affidamento.percentuale_provvigione) {
-      const baseAmount = affidamento.tipo_provvigione === 'passiva' ? affidamento.imponibile : affidamento.totale;
+      const baseAmount = affidamento.tipo_provvigione === 'passiva' ? (affidamento.imponibile ?? 0) : (affidamento.totale ?? 0);
       const importoProvvigione = (baseAmount * affidamento.percentuale_provvigione) / 100;
       
       setAffidamento(prev => ({

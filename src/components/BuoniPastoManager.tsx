@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Calendar, Users, FileText, Check, X, Download, Filter, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { FileText, Check, X, Download, Filter, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import SearchBar from './SearchBar';
 import ExcelExport from './ExcelExport';
 

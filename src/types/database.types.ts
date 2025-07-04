@@ -122,6 +122,32 @@ export interface AffidamentoInsert {
   importo_provvigione?: number;
 }
 
+export interface Fatturazione {
+  id: number;
+  created_at: string;
+  affidamento_id: number;
+  percentuale: number;
+  importo: number;
+  data_scadenza: string;
+  stato: 'In attesa' | 'Fatturata' | 'Pagata' | 'In ritardo';
+  numero_fattura?: string;
+  data_emissione?: string;
+  data_pagamento?: string;
+  note?: string;
+}
+
+export interface FatturazioneInsert {
+  affidamento_id: number;
+  percentuale: number;
+  importo: number;
+  data_scadenza: string;
+  stato?: 'In attesa' | 'Fatturata' | 'Pagata' | 'In ritardo';
+  numero_fattura?: string;
+  data_emissione?: string;
+  data_pagamento?: string;
+  note?: string;
+}
+
 export interface TipoServizio {
   id: number;
   codice_servizio: string;

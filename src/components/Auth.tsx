@@ -20,7 +20,7 @@ const Auth: React.FC<AuthProps> = ({ isEmployeePortal = false }) => {
   const [nome, setNome] = useState('');
   const [telefono, setTelefono] = useState('');
   const [note, setNote] = useState('');
-  const [showFullForm, setShowFullForm] = useState(userRole === 'admin');
+  const [showFullForm] = useState(userRole === 'admin');
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();

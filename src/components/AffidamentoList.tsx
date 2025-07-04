@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Loader2, RefreshCw, FileText, Copy, Calendar, Edit, AlertCircle, Filter, X, Receipt, Trash2, Eye, EyeOff, Clock, Percent, DollarSign, FileBox } from 'lucide-react';
+import { Loader2, RefreshCw, FileText, Copy, Calendar, Edit, AlertCircle, Filter, X, Receipt, Trash2, Eye, EyeOff, Clock, Percent, FileBox } from 'lucide-react';
 import { Affidamento, Fatturazione } from '../types/database.types';
 import SearchBar from './SearchBar';
 import FatturazioneForm from './FatturazioneForm';
