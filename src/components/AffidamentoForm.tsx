@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { AffidamentoInsert, Cliente, Affidamento, Partner } from '../types/database.types';
-import { Save, Loader2, Calculator, X, Check, Maximize2, Minimize2, Percent, DollarSign, Users } from 'lucide-react';
+import { Save, Loader2, Calculator, X, Check, Percent, DollarSign, Users } from 'lucide-react';
 import FullscreenButton from './FullscreenButton';
 
 interface AffidamentoFormProps {
@@ -86,7 +86,7 @@ const AffidamentoForm: React.FC<AffidamentoFormProps> = ({
 
   useEffect(() => {
     // Calculate imponibile, iva, and totale when quantita or prezzo_unitario changes
-    const imponibile = affidamento.quantita * affidamento.prezzo_unitario;
+    const imponibile = (affidamento.quantita || 0) * (affidamento.prezzo_unitario || 0);
     const iva = imponibile * 0.22; // Assuming 22% IVA
     const totale = imponibile + iva;
 
@@ -588,15 +588,15 @@ const AffidamentoForm: React.FC<AffidamentoFormProps> = ({
           <div className="grid grid-cols-3 gap-4">
             <div>
               <p className="text-sm text-gray-500">Imponibile</p>
-              <p className="font-medium">€ {affidamento.imponibile.toFixed(2)}</p>
+              <p className="font-medium">€ {affidamento.imponibile?.toFixed(2) || '0.00'}</p>
             </div>
             <div>
               <p className="text-sm text-gray-500">IVA (22%)</p>
-              <p className="font-medium">€ {affidamento.iva.toFixed(2)}</p>
+              <p className="font-medium">€ {affidamento.iva?.toFixed(2) || '0.00'}</p>
             </div>
             <div>
               <p className="text-sm text-gray-500">Totale</p>
-              <p className="font-medium">€ {affidamento.totale.toFixed(2)}</p>
+              <p className="font-medium">€ {affidamento.totale?.toFixed(2) || '0.00'}</p>
             </div>
             {affidamento.has_provvigione && (
               <div className="col-span-3 mt-2 pt-2 border-t border-gray-200">

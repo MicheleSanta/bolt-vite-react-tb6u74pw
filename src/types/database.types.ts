@@ -48,6 +48,33 @@ export interface ClienteInsert {
   note?: string;
 }
 
+export interface Partner {
+  id: number;
+  nome: string;
+  email?: string;
+  telefono?: string;
+  indirizzo?: string;
+  partita_iva?: string;
+  codice_fiscale?: string;
+  tipo: 'commerciale' | 'tecnico' | 'altro';
+  attivo: boolean;
+  note?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface PartnerInsert {
+  nome: string;
+  email?: string;
+  telefono?: string;
+  indirizzo?: string;
+  partita_iva?: string;
+  codice_fiscale?: string;
+  tipo: 'commerciale' | 'tecnico' | 'altro';
+  attivo?: boolean;
+  note?: string;
+}
+
 export interface Affidamento {
   id: number;
   created_at: string;

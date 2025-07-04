@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Calendar, Users, FileText, Calculator, Car, Trophy } from 'lucide-react';
+import { Users, FileText, Calculator, Car, Trophy } from 'lucide-react';
 
 interface TecnicoStats {
   id: number;
