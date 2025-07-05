@@ -2,6 +2,30 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Users, FileText, Calculator, Car, Trophy } from 'lucide-react';
 
+interface RendicontazioneData {
+  id: number;
+  partner: string;
+  nome_tecnico: string;
+  mese: string;
+  anno: number;
+  codice_cliente: string;
+  nome_cliente: string;
+  numero_commessa?: string;
+  numero_cedolini: number;
+  numero_cedolini_extra: number;
+  totale_cedolini: number;
+  fascia: string;
+  importo: number;
+  totale_trasferta?: number;
+  numero_trasferte?: number;
+  tipo_servizio?: {
+    id: number;
+    codice_servizio: string;
+    descrizione: string;
+  };
+  trasferte?: any[];
+}
+
 interface TecnicoStats {
   id: number;
   nome: string;
@@ -99,7 +123,7 @@ const AdminStatistiche: React.FC = () => {
       // Aggregate data by tecnico
       const tecnicoStats = new Map<string, TecnicoPerformance>();
       
-      rendicontazioni?.forEach(r => {
+      rendicontazioni?.forEach((r: RendicontazioneData) => {
         if (!tecnicoStats.has(r.nome_tecnico)) {
           tecnicoStats.set(r.nome_tecnico, {
             nome: r.nome_tecnico,
@@ -196,7 +220,7 @@ const AdminStatistiche: React.FC = () => {
         performanceMensile: {}
       };
 
-      data?.forEach(record => {
+      data?.forEach((record: RendicontazioneData) => {
         // Aggregate totals
         stats.totaleCedolini += record.numero_cedolini;
         stats.totaleCedoliniExtra += record.numero_cedolini_extra;

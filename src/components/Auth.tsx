@@ -20,13 +20,10 @@ const Auth: React.FC<AuthProps> = ({ isEmployeePortal = false }) => {
   const [nome, setNome] = useState('');
   const [telefono, setTelefono] = useState('');
   const [note, setNote] = useState('');
-  const [showFullForm, setShowFullForm] = useState(userRole === 'admin');
-  const [authPending, setAuthPending] = useState(false);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setAuthPending(true);
     clearError();
     setSuccess(null);
 
@@ -103,7 +100,6 @@ const Auth: React.FC<AuthProps> = ({ isEmployeePortal = false }) => {
         }
 
         if (data.user) {
-          setAuthPending(true);
           // Check if user is validated
           const { data: customUser, error: customError } = await supabase
             .from('users_custom')
@@ -153,7 +149,6 @@ const Auth: React.FC<AuthProps> = ({ isEmployeePortal = false }) => {
       handleError(err);
     } finally {
       setLoading(false);
-      setAuthPending(false);
     }
   };
 
@@ -256,7 +251,7 @@ const Auth: React.FC<AuthProps> = ({ isEmployeePortal = false }) => {
             )}
           </div>
 
-          {(isSignUp || showFullForm) && !isEmployeePortal && (
+          {isSignUp && !isEmployeePortal && (
             <>
               <div>
                 <label htmlFor="nome" className="block text-sm font-medium text-gray-700 mb-1">
