@@ -7,7 +7,8 @@ const adminPassword = import.meta.env.VITE_ADMIN_PASSWORD;
 const adminName = import.meta.env.VITE_ADMIN_NAME;
 const retryAttempts = parseInt(import.meta.env.VITE_RETRY_ATTEMPTS || '5', 10);
 const retryInterval = parseInt(import.meta.env.VITE_RETRY_INTERVAL || '2000', 10);
-const connectionTimeout = parseInt(import.meta.env.VITE_CONNECTION_TIMEOUT || '30000', 10);
+// Connection timeout in milliseconds
+const connectionTimeout = parseInt(import.meta.env.VITE_CONNECTION_TIMEOUT || '15000', 10);
 // Shorter heartbeat interval to detect connection issues faster (10 seconds)
 const heartbeatInterval = 10000;
 
@@ -98,6 +99,10 @@ export const supabase = supabaseInstance;
 let isConnected = true;
 let connectionListeners: Array<(connected: boolean) => void> = [];
 let lastSuccessfulConnection = Date.now();
+let retryCount = 0;
+let heartbeatTimer: number | undefined = undefined;
+let retryTimer: number | undefined = undefined;
+let lastHeartbeatTime = 0;
 
 export const addConnectionListener = (listener: (connected: boolean) => void) => {
   connectionListeners.push(listener);
@@ -123,10 +128,6 @@ const notifyConnectionChange = (connected: boolean) => {
 };
 
 // Connection heartbeat and retry logic
-let heartbeatTimer: number | undefined = undefined;
-let retryCount = 0;
-let retryTimer: number | undefined = undefined;
-let lastHeartbeatTime = 0;
 
 export const startHeartbeat = () => {
   stopHeartbeat(); // Clear any existing timers

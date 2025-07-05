@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { User, LogIn, AlertCircle, Check, Eye, EyeOff, Shield, UserPlus } from 'lucide-react';
+import { User, LogIn, AlertCircle, Check, Eye, EyeOff, Shield, UserPlus, Loader } from 'lucide-react';
 import { useErrorHandler } from '../hooks/useErrorHandler';
 import { useAuth } from '../context/AuthContext';
 
@@ -20,11 +20,13 @@ const Auth: React.FC<AuthProps> = ({ isEmployeePortal = false }) => {
   const [nome, setNome] = useState('');
   const [telefono, setTelefono] = useState('');
   const [note, setNote] = useState('');
-  const [showFullForm] = useState(userRole === 'admin');
+  const [showFullForm, setShowFullForm] = useState(userRole === 'admin');
+  const [authPending, setAuthPending] = useState(false);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setAuthPending(true);
     clearError();
     setSuccess(null);
 
@@ -101,6 +103,7 @@ const Auth: React.FC<AuthProps> = ({ isEmployeePortal = false }) => {
         }
 
         if (data.user) {
+          setAuthPending(true);
           // Check if user is validated
           const { data: customUser, error: customError } = await supabase
             .from('users_custom')
@@ -108,23 +111,41 @@ const Auth: React.FC<AuthProps> = ({ isEmployeePortal = false }) => {
             .eq('id', data.user.id)
             .single();
 
-          if (customError) throw customError;
+          if (customError) {
+            // If user_custom record doesn't exist, create one
+            if (customError.code === 'PGRST116') {
+              const { error: insertError } = await supabase
+                .from('users_custom')
+                .insert([{
+                  id: data.user.id,
+                  email: data.user.email,
+                  role: 'user',
+                  attivo: true,
+                  validato: true
+                }]);
+              
+              if (insertError) throw insertError;
+              // Continue with authentication
+            } else {
+              throw customError;
+            }
+          } else if (customUser) {
+            if (!customUser.attivo) {
+              throw new Error('Questo account è stato disattivato');
+            }
 
-          if (!customUser.attivo) {
-            throw new Error('Questo account è stato disattivato');
-          }
+            if (!customUser.validato) {
+              throw new Error(
+                customUser.motivo_rifiuto 
+                  ? `Account non validato. Motivo: ${customUser.motivo_rifiuto}` 
+                  : 'Il tuo account è in attesa di approvazione da parte dell\'amministratore.'
+              );
+            }
 
-          if (!customUser.validato) {
-            throw new Error(
-              customUser.motivo_rifiuto 
-                ? `Account non validato. Motivo: ${customUser.motivo_rifiuto}` 
-                : 'Il tuo account è in attesa di approvazione da parte dell\'amministratore.'
-            );
-          }
-
-          // Check if user has the correct role for employee portal
-          if (isEmployeePortal && customUser.role !== 'employee') {
-            throw new Error('Accesso non autorizzato. Solo i dipendenti possono accedere a questo portale.');
+            // Check if user has the correct role for employee portal
+            if (isEmployeePortal && customUser.role !== 'employee') {
+              throw new Error('Accesso non autorizzato. Solo i dipendenti possono accedere a questo portale.');
+            }
           }
         }
       }
@@ -132,6 +153,7 @@ const Auth: React.FC<AuthProps> = ({ isEmployeePortal = false }) => {
       handleError(err);
     } finally {
       setLoading(false);
+      setAuthPending(false);
     }
   };
 
@@ -288,10 +310,7 @@ const Auth: React.FC<AuthProps> = ({ isEmployeePortal = false }) => {
           >
             {loading ? (
               <span className="flex items-center">
-                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+                <Loader className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" />
                 Caricamento...
               </span>
             ) : (
@@ -321,12 +340,12 @@ const Auth: React.FC<AuthProps> = ({ isEmployeePortal = false }) => {
           <div className="mt-4 text-center">
             <button
               onClick={() => {
-                setIsSignUp(!isSignUp);
                 clearError();
                 setSuccess(null);
                 resetForm();
+                setIsSignUp(!isSignUp);
               }}
-              className="text-sm text-blue-600 hover:text-blue-800"
+              className="text-sm text-blue-600 hover:text-blue-800 focus:outline-none focus:underline transition-colors duration-200"
             >
               {isSignUp
                 ? 'Hai già un account? Accedi'

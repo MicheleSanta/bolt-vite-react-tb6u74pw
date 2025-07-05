@@ -136,6 +136,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const initAuth = async () => {
       try {
         setIsLoading(true);
+        clearError();
         const { data: { session }, error } = await supabase.auth.getSession();
         
         if (error) {
@@ -154,9 +155,37 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 console.warn('Failed to update initial last access time:', err);
               });
             } catch (err) {
-              handleError(err);
-              setUserRole(null);
-              await signOut();
+              console.error('Error fetching user role:', err);
+              // Create default user record if it doesn't exist
+              try {
+                const { data: existsData } = await supabase
+                  .from('users_custom')
+                  .select('id')
+                  .eq('id', session.user.id)
+                  .single();
+                
+                if (!existsData) {
+                  await supabase
+                    .from('users_custom')
+                    .insert([{
+                      id: session.user.id,
+                      email: session.user.email,
+                      role: 'user',
+                      attivo: true,
+                      validato: true
+                    }]);
+                  setUserRole('user');
+                } else {
+                  // If user exists but there was another error
+                  handleError(err);
+                  setUserRole(null);
+                  await signOut();
+                }
+              } catch (createErr) {
+                handleError(createErr);
+                setUserRole(null);
+                await signOut();
+              }
             }
           }
         }
@@ -172,15 +201,39 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log(`Auth state changed: ${event}`);
-      
+
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         setSession(session);
         setUser(session?.user || null);
         
         if (session?.user) {
           try {
-            const role = await fetchUserRole(session.user.id);
-            setUserRole(role);
+            try {
+              const role = await fetchUserRole(session.user.id);
+              setUserRole(role);
+            } catch (roleErr) {
+              // Create default user record if it doesn't exist
+              const { data: existsData } = await supabase
+                .from('users_custom')
+                .select('id')
+                .eq('id', session.user.id)
+                .single();
+              
+              if (!existsData) {
+                await supabase
+                  .from('users_custom')
+                  .insert([{
+                    id: session.user.id,
+                    email: session.user.email,
+                    role: 'user',
+                    attivo: true,
+                    validato: true
+                  }]);
+                setUserRole('user');
+              } else {
+                throw roleErr;
+              }
+            }
           } catch (err) {
             handleError(err);
             setUserRole(null);
@@ -202,10 +255,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const signOut = async () => {
     try {
       await supabase.auth.signOut();
-      setSession(null);
-      setUser(null);
-      setUserRole(null);
-      clearError();
+      setTimeout(() => {
+        setSession(null);
+        setUser(null);
+        setUserRole(null);
+        clearError();
+      }, 100);
     } catch (err) {
       handleError(err);
     }
