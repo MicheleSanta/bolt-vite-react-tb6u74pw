@@ -12,7 +12,11 @@ const connectionTimeout = parseInt(import.meta.env.VITE_CONNECTION_TIMEOUT || '3
 // Declare supabase instance variable at top level
 let supabaseInstance: any;
 
-// Validate environment variables
+// Declare supabase instance variable at top level
+let supabaseInstance: any;
+};
+
+// Function to validate URL
 const isValidUrl = (string: string): boolean => {
   try {
     new URL(string);
@@ -91,6 +95,9 @@ if (!supabaseUrl || !supabaseAnonKey ||
     }
   });
 }
+
+// Export the supabase instance unconditionally
+export const supabase = supabaseInstance;
 
 // Export the supabase instance unconditionally
 export const supabase = supabaseInstance;
