@@ -8,6 +8,8 @@ const adminName = import.meta.env.VITE_ADMIN_NAME;
 const retryAttempts = parseInt(import.meta.env.VITE_RETRY_ATTEMPTS || '5', 10);
 const retryInterval = parseInt(import.meta.env.VITE_RETRY_INTERVAL || '2000', 10);
 const connectionTimeout = parseInt(import.meta.env.VITE_CONNECTION_TIMEOUT || '30000', 10);
+// Shorter heartbeat interval to detect connection issues faster (10 seconds)
+const heartbeatInterval = 10000;
 
 // Declare supabase instance variable at top level
 let supabaseInstance: any;
@@ -65,9 +67,6 @@ if (!supabaseUrl || !supabaseAnonKey ||
   
   supabaseInstance = mockClient;
 } else {
-  // Shorter heartbeat interval to detect connection issues faster (10 seconds)
-  const heartbeatInterval = 10000;
-  
   // Create Supabase client with enhanced connection settings
   supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
