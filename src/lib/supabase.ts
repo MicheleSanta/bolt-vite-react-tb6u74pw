@@ -9,6 +9,9 @@ const retryAttempts = parseInt(import.meta.env.VITE_RETRY_ATTEMPTS || '5', 10);
 const retryInterval = parseInt(import.meta.env.VITE_RETRY_INTERVAL || '2000', 10);
 const connectionTimeout = parseInt(import.meta.env.VITE_CONNECTION_TIMEOUT || '30000', 10);
 
+// Declare supabase instance variable at top level
+let supabaseInstance: any;
+
 // Validate environment variables
 const isValidUrl = (string: string): boolean => {
   try {
@@ -60,13 +63,13 @@ if (!supabaseUrl || !supabaseAnonKey ||
     })
   } as any;
   
-  export { mockClient as supabase };
+  supabaseInstance = mockClient;
 } else {
   // Shorter heartbeat interval to detect connection issues faster (10 seconds)
   const heartbeatInterval = 10000;
   
   // Create Supabase client with enhanced connection settings
-  export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
@@ -88,6 +91,9 @@ if (!supabaseUrl || !supabaseAnonKey ||
     }
   });
 }
+
+// Export the supabase instance unconditionally
+export const supabase = supabaseInstance;
 
 // Connection state management
 let isConnected = true;
